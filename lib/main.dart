@@ -1,122 +1,774 @@
 import 'package:flutter/material.dart';
+import 'dart:math' as math;
 
 void main() {
-  runApp(const MyApp());
+  runApp(MyApp());
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-      ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      title: 'Drawing Demo',
+      theme: ThemeData(primarySwatch: Colors.blue),
+      home: DrawingScreen(),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
+class DrawingPoint {
+  final Offset offset;
+  final DateTime timestamp;
 
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
+  DrawingPoint({required this.offset, required this.timestamp});
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  String toString() {
+    return 'Point(x: ${offset.dx.toStringAsFixed(1)}, y: ${offset.dy.toStringAsFixed(1)}, time: ${timestamp.millisecondsSinceEpoch})';
+  }
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class DrawingScreen extends StatefulWidget {
+  @override
+  _DrawingScreenState createState() => _DrawingScreenState();
+}
 
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
-  }
+class _DrawingScreenState extends State<DrawingScreen> {
+  List<DrawingPoint> points = [];
+  List<List<DrawingPoint>> strokes = [];
+  List<DrawingPoint> currentStroke = [];
+  Offset? currentTouchPosition;
+  Offset? actualCircleCenter; // Store actual circle center
+  double actualRadius = 100.0;
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
       appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
+        title: Text('Drawing Demo'),
+        actions: [
+          IconButton(icon: Icon(Icons.clear), onPressed: _clearCanvas),
+          IconButton(icon: Icon(Icons.data_usage), onPressed: _showData),
+          IconButton(
+            icon: Icon(Icons.check_circle),
+            onPressed: points.isNotEmpty ? _finishDrawing : null,
+            tooltip: 'Finish & Analyze',
+          ),
+        ],
       ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
+      body: Stack(
+        children: [
+          Container(
+            width: double.infinity,
+            height: double.infinity,
+            child: GestureDetector(
+              onPanStart: _onPanStart,
+              onPanUpdate: _onPanUpdate,
+              onPanEnd: _onPanEnd,
+              child: CustomPaint(
+                painter: DrawingPainter(
+                  strokes: strokes,
+                  currentStroke: currentStroke,
+                  onCircleCenterCalculated: (center) {
+                    actualCircleCenter = center;
+                  },
+                ),
+                size: Size.infinite,
+              ),
+            ),
+          ),
+          // Coordinate display
+          if (currentTouchPosition != null)
+            Positioned(
+              top: 50,
+              left: 20,
+              child: Container(
+                padding: EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.7),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  'X: ${currentTouchPosition!.dx.toStringAsFixed(1)}\n'
+                  'Y: ${currentTouchPosition!.dy.toStringAsFixed(1)}\n'
+                  'Points: ${points.length}',
+                  style: TextStyle(color: Colors.white, fontSize: 12),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  void _onPanStart(DragStartDetails details) {
+    currentStroke = [];
+
+    DrawingPoint point = DrawingPoint(
+      offset: details.localPosition,
+      timestamp: DateTime.now(),
+    );
+
+    setState(() {
+      currentStroke.add(point);
+      points.add(point);
+      currentTouchPosition = details.localPosition;
+    });
+
+    print('Start drawing at: ${point.toString()}');
+  }
+
+  void _onPanUpdate(DragUpdateDetails details) {
+    DrawingPoint point = DrawingPoint(
+      offset: details.localPosition,
+      timestamp: DateTime.now(),
+    );
+
+    setState(() {
+      currentStroke.add(point);
+      points.add(point);
+      currentTouchPosition = details.localPosition;
+    });
+
+    print('Drawing at: ${point.toString()}');
+  }
+
+  void _onPanEnd(DragEndDetails details) {
+    setState(() {
+      strokes.add(List.from(currentStroke));
+      currentStroke = [];
+      currentTouchPosition = null;
+    });
+    print('Stroke ended. Total points: ${points.length}');
+  }
+
+  void _clearCanvas() {
+    setState(() {
+      points.clear();
+      strokes.clear();
+      currentStroke.clear();
+      currentTouchPosition = null;
+    });
+  }
+
+  void _finishDrawing() {
+    if (points.isEmpty) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder:
+            (context) => AnalysisScreen(
+              drawingPoints: points,
+              actualCircleCenter: actualCircleCenter,
+              actualRadius: actualRadius,
+            ),
+      ),
+    );
+  }
+
+  void _showData() {
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: Text('Drawing Data (${points.length} points)'),
+            content: Container(
+              width: double.maxFinite,
+              height: 400,
+              child: ListView.builder(
+                itemCount: points.length,
+                itemBuilder: (context, index) {
+                  String readableTime =
+                      DateTime.fromMillisecondsSinceEpoch(
+                        points[index].timestamp.millisecondsSinceEpoch,
+                      ).toString().split('.')[0]; // Remove microseconds
+
+                  // Calculate time difference from first point
+                  int timeDiff = 0;
+                  if (points.isNotEmpty && index > 0) {
+                    timeDiff =
+                        points[index].timestamp.millisecondsSinceEpoch -
+                        points[0].timestamp.millisecondsSinceEpoch;
+                  }
+
+                  return Text(
+                    '${index + 1}: X:${points[index].offset.dx.toStringAsFixed(1)} '
+                    'Y:${points[index].offset.dy.toStringAsFixed(1)} '
+                    '+${timeDiff}ms\n'
+                    'Time: $readableTime',
+                    style: TextStyle(fontSize: 11),
+                  );
+                },
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text('Close'),
+              ),
+            ],
+          ),
+    );
+  }
+}
+
+class DrawingPainter extends CustomPainter {
+  final List<List<DrawingPoint>> strokes;
+  final List<DrawingPoint> currentStroke;
+  final Function(Offset)? onCircleCenterCalculated;
+
+  DrawingPainter({
+    required this.strokes,
+    required this.currentStroke,
+    this.onCircleCenterCalculated,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Draw watermark (simple circle as example)
+    _drawWatermark(canvas, size);
+
+    // Draw completed strokes
+    Paint strokePaint =
+        Paint()
+          ..color = Colors.blue
+          ..strokeWidth = 3.0
+          ..strokeCap = StrokeCap.round;
+
+    for (List<DrawingPoint> stroke in strokes) {
+      _drawStroke(canvas, stroke, strokePaint);
+    }
+
+    // Draw current stroke
+    if (currentStroke.isNotEmpty) {
+      strokePaint.color = Colors.blue.withOpacity(0.8);
+      _drawStroke(canvas, currentStroke, strokePaint);
+    }
+  }
+
+  void _drawWatermark(Canvas canvas, Size size) {
+    Paint watermarkPaint =
+        Paint()
+          ..color = Colors.grey.withOpacity(0.3)
+          ..strokeWidth = 2.0
+          ..style = PaintingStyle.stroke;
+
+    // Draw a simple circle as watermark/template
+    Offset center = Offset(size.width / 2, size.height / 2);
+    double radius = 100.0;
+    canvas.drawCircle(center, radius, watermarkPaint);
+
+    // Notify parent about actual circle center
+    if (onCircleCenterCalculated != null) {
+      onCircleCenterCalculated!(center);
+    }
+
+    // Debug: Show center point
+    Paint centerPaint =
+        Paint()
+          ..color = Colors.red
+          ..strokeWidth = 4;
+    canvas.drawCircle(center, 3, centerPaint);
+
+    // Add some guiding text
+    TextPainter textPainter = TextPainter(
+      text: TextSpan(
+        text:
+            'Trace the circle\nCenter: ${center.dx.toInt()}, ${center.dy.toInt()}',
+        style: TextStyle(color: Colors.grey.withOpacity(0.7), fontSize: 14),
+      ),
+      textDirection: TextDirection.ltr,
+      textAlign: TextAlign.center,
+    );
+    textPainter.layout();
+    textPainter.paint(
+      canvas,
+      Offset(center.dx - textPainter.width / 2, center.dy - radius - 50),
+    );
+  }
+
+  void _drawStroke(Canvas canvas, List<DrawingPoint> stroke, Paint paint) {
+    if (stroke.isEmpty) return;
+
+    if (stroke.length == 1) {
+      // Draw a single point as a small circle
+      canvas.drawCircle(stroke[0].offset, paint.strokeWidth / 2, paint);
+      return;
+    }
+
+    // Draw lines between consecutive points
+    for (int i = 0; i < stroke.length - 1; i++) {
+      canvas.drawLine(stroke[i].offset, stroke[i + 1].offset, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(CustomPainter oldDelegate) => true;
+}
+
+class AnalysisScreen extends StatelessWidget {
+  final List<DrawingPoint> drawingPoints;
+  final Offset? actualCircleCenter;
+  final double actualRadius;
+
+  AnalysisScreen({
+    required this.drawingPoints,
+    this.actualCircleCenter,
+    this.actualRadius = 100.0,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final analysis = _analyzeDrawing();
+
+    return Scaffold(
+      appBar: AppBar(title: Text('Drawing Analysis')),
+      body: SingleChildScrollView(
+        padding: EdgeInsets.all(16),
         child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            const Text('You have pushed the button this many times:'),
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildScoreCard(analysis),
+            SizedBox(height: 20),
+            _buildAnomalyChart(analysis),
+            SizedBox(height: 20),
+            _buildSpeedChart(analysis),
+            SizedBox(height: 20),
+            _buildDetailedStats(analysis),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Map<String, dynamic> _analyzeDrawing() {
+    if (drawingPoints.isEmpty) return {};
+
+    // Use actual circle center or calculate from drawing
+    Offset idealCenter;
+    if (actualCircleCenter != null) {
+      idealCenter = actualCircleCenter!;
+    } else {
+      // Fallback: calculate center from drawing points
+      double centerX = 0, centerY = 0;
+      for (var point in drawingPoints) {
+        centerX += point.offset.dx;
+        centerY += point.offset.dy;
+      }
+      centerX /= drawingPoints.length;
+      centerY /= drawingPoints.length;
+      idealCenter = Offset(centerX, centerY);
+    }
+
+    double idealRadius = actualRadius;
+
+    // Calculate anomalies and metrics
+    List<double> deviations = [];
+    List<double> speeds = [];
+    List<double> smoothness = [];
+
+    for (int i = 0; i < drawingPoints.length; i++) {
+      // Distance from ideal circle
+      double distToIdeal = (drawingPoints[i].offset - idealCenter).distance;
+      double deviation = (distToIdeal - idealRadius).abs();
+      deviations.add(deviation);
+
+      // Speed calculation
+      if (i > 0) {
+        double distance =
+            (drawingPoints[i].offset - drawingPoints[i - 1].offset).distance;
+        int timeDiff =
+            drawingPoints[i].timestamp.millisecondsSinceEpoch -
+            drawingPoints[i - 1].timestamp.millisecondsSinceEpoch;
+        double speed =
+            timeDiff > 0 ? distance / timeDiff * 1000 : 0; // pixels per second
+        speeds.add(speed);
+
+        // Smoothness (acceleration changes)
+        if (speeds.length > 1) {
+          double acceleration = (speeds.last - speeds[speeds.length - 2]).abs();
+          smoothness.add(acceleration);
+        }
+      }
+    }
+
+    // Performance metrics
+    double avgDeviation =
+        deviations.isNotEmpty
+            ? deviations.reduce((a, b) => a + b) / deviations.length
+            : 0;
+    double maxDeviation =
+        deviations.isNotEmpty ? deviations.reduce(math.max) : 0;
+    double avgSpeed =
+        speeds.isNotEmpty ? speeds.reduce((a, b) => a + b) / speeds.length : 0;
+    double speedVariation = speeds.isNotEmpty ? _calculateVariation(speeds) : 0;
+    double smoothnessScore =
+        smoothness.isNotEmpty ? _calculateVariation(smoothness) : 0;
+
+    // Overall score (0-100) - improved scoring
+    double accuracyScore = math.max(
+      0,
+      100 - (avgDeviation * 1.5),
+    ); // More lenient
+    double speedScore = math.max(
+      0,
+      100 - (speedVariation / 20),
+    ); // More lenient
+    double smoothnessScoreNormalized = math.max(
+      0,
+      100 - (smoothnessScore / 200),
+    ); // More lenient
+    double overallScore =
+        (accuracyScore + speedScore + smoothnessScoreNormalized) / 3;
+
+    return {
+      'deviations': deviations,
+      'speeds': speeds,
+      'smoothness': smoothness,
+      'avgDeviation': avgDeviation,
+      'maxDeviation': maxDeviation,
+      'avgSpeed': avgSpeed,
+      'speedVariation': speedVariation,
+      'accuracyScore': accuracyScore,
+      'speedScore': speedScore,
+      'smoothnessScore': smoothnessScoreNormalized,
+      'overallScore': overallScore,
+      'idealCenter': idealCenter,
+      'idealRadius': idealRadius,
+    };
+  }
+
+  double _calculateVariation(List<double> values) {
+    if (values.isEmpty) return 0;
+    double mean = values.reduce((a, b) => a + b) / values.length;
+    double variance =
+        values.map((x) => math.pow(x - mean, 2)).reduce((a, b) => a + b) /
+        values.length;
+    return math.sqrt(variance);
+  }
+
+  Widget _buildScoreCard(Map<String, dynamic> analysis) {
+    double score = analysis['overallScore'] ?? 0;
+    String rating =
+        score >= 80
+            ? 'Excellent'
+            : score >= 60
+            ? 'Good'
+            : score >= 40
+            ? 'Average'
+            : 'Below Average';
+
+    Color scoreColor =
+        score >= 80
+            ? Colors.green
+            : score >= 60
+            ? Colors.blue
+            : score >= 40
+            ? Colors.orange
+            : Colors.red;
+
+    return Card(
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          children: [
             Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
+              'Overall Performance',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 10),
+            CircularProgressIndicator(
+              value: score / 100,
+              backgroundColor: Colors.grey[300],
+              valueColor: AlwaysStoppedAnimation<Color>(scoreColor),
+              strokeWidth: 8,
+            ),
+            SizedBox(height: 10),
+            Text(
+              '${score.toStringAsFixed(1)}/100',
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            ),
+            Text(rating, style: TextStyle(fontSize: 16, color: scoreColor)),
+            SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildMiniScore('Accuracy', analysis['accuracyScore'] ?? 0),
+                _buildMiniScore('Speed', analysis['speedScore'] ?? 0),
+                _buildMiniScore('Smoothness', analysis['smoothnessScore'] ?? 0),
+              ],
             ),
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
     );
   }
+
+  Widget _buildMiniScore(String label, double score) {
+    return Column(
+      children: [
+        Text(label, style: TextStyle(fontSize: 12)),
+        Text(
+          '${score.toStringAsFixed(0)}',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAnomalyChart(Map<String, dynamic> analysis) {
+    List<double> deviations = analysis['deviations'] ?? [];
+    if (deviations.isEmpty) return Container();
+
+    return Card(
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Circle Accuracy Analysis',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 10),
+            Container(
+              height: 200,
+              child: CustomPaint(
+                painter: AnomalyChartPainter(
+                  deviations: deviations,
+                  drawingPoints: drawingPoints,
+                  idealCenter: analysis['idealCenter'],
+                  idealRadius: analysis['idealRadius'],
+                ),
+                size: Size.infinite,
+              ),
+            ),
+            Text(
+              'Red areas show deviations from perfect circle',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSpeedChart(Map<String, dynamic> analysis) {
+    List<double> speeds = analysis['speeds'] ?? [];
+    if (speeds.isEmpty) return Container();
+
+    return Card(
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Drawing Speed Analysis',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 10),
+            Container(
+              height: 150,
+              child: CustomPaint(
+                painter: SpeedChartPainter(speeds: speeds),
+                size: Size.infinite,
+              ),
+            ),
+            Text(
+              'Shows your drawing speed over time (pixels/second)',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailedStats(Map<String, dynamic> analysis) {
+    Offset idealCenter = analysis['idealCenter'] ?? Offset(0, 0);
+    return Card(
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Detailed Statistics',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 10),
+            _buildStatRow('Total Points', '${drawingPoints.length}'),
+            _buildStatRow(
+              'Circle Center',
+              '${idealCenter.dx.toInt()}, ${idealCenter.dy.toInt()}',
+            ),
+            _buildStatRow(
+              'Average Deviation',
+              '${(analysis['avgDeviation'] ?? 0).toStringAsFixed(1)} px',
+            ),
+            _buildStatRow(
+              'Max Deviation',
+              '${(analysis['maxDeviation'] ?? 0).toStringAsFixed(1)} px',
+            ),
+            _buildStatRow(
+              'Average Speed',
+              '${(analysis['avgSpeed'] ?? 0).toStringAsFixed(1)} px/s',
+            ),
+            _buildStatRow('Total Time', '${_getTotalTime()} ms'),
+            SizedBox(height: 10),
+            Text(
+              'Testing Tips:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            Text(
+              '• Start at 3 o\'clock position\n• Draw clockwise slowly\n• Stay close to gray circle\n• Good score: <20px deviation',
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatRow(String label, String value) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label),
+          Text(value, style: TextStyle(fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
+  }
+
+  String _getTotalTime() {
+    if (drawingPoints.length < 2) return '0';
+    int totalTime =
+        drawingPoints.last.timestamp.millisecondsSinceEpoch -
+        drawingPoints.first.timestamp.millisecondsSinceEpoch;
+    return totalTime.toString();
+  }
+}
+
+class AnomalyChartPainter extends CustomPainter {
+  final List<double> deviations;
+  final List<DrawingPoint> drawingPoints;
+  final Offset idealCenter;
+  final double idealRadius;
+
+  AnomalyChartPainter({
+    required this.deviations,
+    required this.drawingPoints,
+    required this.idealCenter,
+    required this.idealRadius,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (drawingPoints.isEmpty) return;
+
+    // Scale drawing to fit in chart
+    double scaleX = size.width / 400; // Assuming original canvas was ~400 wide
+    double scaleY = size.height / 400;
+    double scale = math.min(scaleX, scaleY);
+
+    Offset center = Offset(size.width / 2, size.height / 2);
+
+    // Draw ideal circle
+    Paint idealPaint =
+        Paint()
+          ..color = Colors.grey.withOpacity(0.3)
+          ..strokeWidth = 2
+          ..style = PaintingStyle.stroke;
+
+    canvas.drawCircle(center, idealRadius * scale * 0.5, idealPaint);
+
+    // Draw actual path with color coding for deviations
+    for (int i = 0; i < drawingPoints.length - 1; i++) {
+      double deviation = deviations[i];
+      double intensity = math.min(1.0, deviation / 50); // Normalize deviation
+
+      Paint linePaint =
+          Paint()
+            ..color = Color.lerp(Colors.green, Colors.red, intensity)!
+            ..strokeWidth = 3;
+
+      Offset p1 = _scalePoint(drawingPoints[i].offset, center, scale);
+      Offset p2 = _scalePoint(drawingPoints[i + 1].offset, center, scale);
+
+      canvas.drawLine(p1, p2, linePaint);
+    }
+  }
+
+  Offset _scalePoint(Offset original, Offset center, double scale) {
+    return center + (original - idealCenter) * scale * 0.5;
+  }
+
+  @override
+  bool shouldRepaint(CustomPainter oldDelegate) => true;
+}
+
+class SpeedChartPainter extends CustomPainter {
+  final List<double> speeds;
+
+  SpeedChartPainter({required this.speeds});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (speeds.isEmpty) return;
+
+    double maxSpeed = speeds.reduce(math.max);
+    if (maxSpeed == 0) return;
+
+    Paint linePaint =
+        Paint()
+          ..color = Colors.blue
+          ..strokeWidth = 2;
+
+    Paint fillPaint = Paint()..color = Colors.blue.withOpacity(0.3);
+
+    // Create path for the speed curve
+    Path path = Path();
+    Path fillPath = Path();
+
+    double stepX = size.width / (speeds.length - 1);
+
+    fillPath.moveTo(0, size.height);
+    path.moveTo(0, size.height - (speeds[0] / maxSpeed * size.height));
+    fillPath.lineTo(0, size.height - (speeds[0] / maxSpeed * size.height));
+
+    for (int i = 1; i < speeds.length; i++) {
+      double x = i * stepX;
+      double y = size.height - (speeds[i] / maxSpeed * size.height);
+
+      path.lineTo(x, y);
+      fillPath.lineTo(x, y);
+    }
+
+    fillPath.lineTo(size.width, size.height);
+    fillPath.close();
+
+    // Draw filled area and line
+    canvas.drawPath(fillPath, fillPaint);
+    canvas.drawPath(path, linePaint);
+
+    // Draw average line
+    double avgSpeed = speeds.reduce((a, b) => a + b) / speeds.length;
+    double avgY = size.height - (avgSpeed / maxSpeed * size.height);
+
+    Paint avgPaint =
+        Paint()
+          ..color = Colors.red
+          ..strokeWidth = 1
+          ..style = PaintingStyle.stroke;
+
+    canvas.drawLine(Offset(0, avgY), Offset(size.width, avgY), avgPaint);
+  }
+
+  @override
+  bool shouldRepaint(CustomPainter oldDelegate) => true;
 }
