@@ -16,6 +16,7 @@ class MyApp extends StatelessWidget {
   }
 }
 
+
 class DrawingPainter extends CustomPainter {
   final List<List<DrawingPoint>> strokes;
   final List<DrawingPoint> currentStroke;
