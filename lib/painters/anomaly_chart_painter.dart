@@ -1,6 +1,6 @@
-import 'package:drawingdemo/models/drawing_point.dart';
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
+import '../models/drawing_point.dart';
 
 class AnomalyChartPainter extends CustomPainter {
   final List<double> deviations;

@@ -1,5 +1,5 @@
-import 'package:drawingdemo/models/drawing_point.dart';
 import 'package:flutter/material.dart';
+import '../models/drawing_point.dart';
 
 class DrawingPainter extends CustomPainter {
   final List<List<DrawingPoint>> strokes;

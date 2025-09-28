@@ -1,5 +1,8 @@
-import 'package:drawingdemo/models/drawing_point.dart';
 import 'package:flutter/material.dart';
+import '../models/drawing_point.dart';
+import '../widgets/drawing_canvas.dart';
+import '../widgets/coordinate_display.dart';
+import 'analysis_screen.dart';
 
 class DrawingScreen extends StatefulWidget {
   @override
@@ -11,7 +14,7 @@ class _DrawingScreenState extends State<DrawingScreen> {
   List<List<DrawingPoint>> strokes = [];
   List<DrawingPoint> currentStroke = [];
   Offset? currentTouchPosition;
-  Offset? actualCircleCenter; // Store actual circle center
+  Offset? actualCircleCenter;
   double actualRadius = 100.0;
 
   @override
@@ -31,43 +34,20 @@ class _DrawingScreenState extends State<DrawingScreen> {
       ),
       body: Stack(
         children: [
-          Container(
-            width: double.infinity,
-            height: double.infinity,
-            child: GestureDetector(
-              onPanStart: _onPanStart,
-              onPanUpdate: _onPanUpdate,
-              onPanEnd: _onPanEnd,
-              child: CustomPaint(
-                painter: DrawingPainter(
-                  strokes: strokes,
-                  currentStroke: currentStroke,
-                  onCircleCenterCalculated: (center) {
-                    actualCircleCenter = center;
-                  },
-                ),
-                size: Size.infinite,
-              ),
-            ),
+          DrawingCanvas(
+            strokes: strokes,
+            currentStroke: currentStroke,
+            onPanStart: _onPanStart,
+            onPanUpdate: _onPanUpdate,
+            onPanEnd: _onPanEnd,
+            onCircleCenterCalculated: (center) {
+              actualCircleCenter = center;
+            },
           ),
-          // Coordinate display
           if (currentTouchPosition != null)
-            Positioned(
-              top: 50,
-              left: 20,
-              child: Container(
-                padding: EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.7),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  'X: ${currentTouchPosition!.dx.toStringAsFixed(1)}\n'
-                  'Y: ${currentTouchPosition!.dy.toStringAsFixed(1)}\n'
-                  'Points: ${points.length}',
-                  style: TextStyle(color: Colors.white, fontSize: 12),
-                ),
-              ),
+            CoordinateDisplay(
+              position: currentTouchPosition!,
+              pointCount: points.length,
             ),
         ],
       ),
@@ -155,9 +135,8 @@ class _DrawingScreenState extends State<DrawingScreen> {
                   String readableTime =
                       DateTime.fromMillisecondsSinceEpoch(
                         points[index].timestamp.millisecondsSinceEpoch,
-                      ).toString().split('.')[0]; // Remove microseconds
+                      ).toString().split('.')[0];
 
-                  // Calculate time difference from first point
                   int timeDiff = 0;
                   if (points.isNotEmpty && index > 0) {
                     timeDiff =
